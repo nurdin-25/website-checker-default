@@ -30,7 +30,7 @@ function App() {
       }
       return 1;
     }).map(async (website) => {
-      const status_client = await axios.get(website.domain_name).then((data) => data.status).catch((_err) => null);
+      const status_client = await fetch(website.domain_name, { mode: "no-cors" }).then((res) => res.status);
       const status_server = await axios.get(website.backend_url).then((data) => data.status).catch((_err) => null);
       return {
         server_location: website.server_location,
