@@ -23,7 +23,7 @@ const WebsiteList: Array<WebsiteListInterface> = [
         server_location: "biznet-2",
         program_name: "QC cabang",
         domain_name: "qc-cabang.goldstore.id",
-        backend_url: 'https://apibz2.nagatech.id:7111/api/v1/system/get',
+        backend_url: 'https://103.196.146.42:7111/api/v1/system/get',
     },
     {
         server_location: "biznet-1",
