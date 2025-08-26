@@ -29,25 +29,25 @@ const WebsiteList: Array<WebsiteListInterface> = [
         server_location: "biznet-1",
         program_name: "kgpst1957.com",
         domain_name: "kgpst1957.com",
-        backend_url: 'https://apibz1.nagatech.id:10002/api/v1/system/get',
+        backend_url: 'https://103.196.146.28:10002/api/v1/system/get',
     },
     {
         server_location: "biznet-1",
         program_name: "mawarmp.goldstore.id",
         domain_name: "mawarmp.goldstore.id",
-        backend_url: 'https://apibz1.nagatech.id:10003/api/v1/system/get',
+        backend_url: 'https://103.196.146.28:10003/api/v1/system/get',
     },
     {
         server_location: "biznet-1",
         program_name: "gulabiru.goldstore.id",
         domain_name: "gulabiru.goldstore.id",
-        backend_url: 'https://apibz1.nagatech.id:10004/api/v1/system/get',
+        backend_url: 'https://103.196.146.28:10004/api/v1/system/get',
     },
     {
         server_location: "biznet-1",
         program_name: "sjg.goldstore.id",
         domain_name: "sjg.goldstore.id",
-        backend_url: 'https://apibz1.nagatech.id:10005/api/v1/system/get',
+        backend_url: 'https://103.196.146.28:10005/api/v1/system/get',
     }
 ];
 
