@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import WebsiteList, { type WebsiteListWithStatusInterface } from "./data/website";
 import axios from "axios";
 
+const backend = import.meta.env.VITE_BACKEND_URL;
+
 const StatusBadge: React.FC<{ status: boolean }> = ({ status }) => {
   return (
     <span
@@ -30,8 +32,8 @@ function App() {
       }
       return 1;
     }).map(async (website) => {
-      const status_client = await fetch(website.domain_name, { mode: "no-cors" }).then((res) => res.status);
-      const status_server = await axios.get(website.backend_url).then((data) => data.status).catch((_err) => null);
+      const status_client = await axios.get(`${backend}/check?url=${website.domain_name}`).then((res) => res.status);
+      const status_server = await axios.get(`${website.backend_url}`).then((data) => data.status).catch((_err) => null);
       return {
         server_location: website.server_location,
         domain_name: website.domain_name,
