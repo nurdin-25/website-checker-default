@@ -32,13 +32,13 @@ function App() {
       }
       return 1;
     }).map(async (website) => {
-      const status_client = await axios.get(`${backend}/check?url=${website.domain_name}`).then((res) => res.status);
+      const status_client = await axios.get(`${backend}/check?url=${website.domain_name}`).then((res) => res.data.status);
       const status_server = await axios.get(`${website.backend_url}`).then((data) => data.status).catch((_err) => null);
       return {
         server_location: website.server_location,
         domain_name: website.domain_name,
         program_name: website.program_name,
-        status_client: status_client === 200,
+        status_client,
         backend_url: website.backend_url,
         status_server: status_server === 200,
       }
@@ -54,6 +54,8 @@ function App() {
         website.backend_url.toLowerCase().includes(lowerSearch)
       );
     });
+
+    console.log(filteredData);
 
     setTable(filteredData);
   }
