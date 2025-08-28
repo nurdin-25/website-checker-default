@@ -108,20 +108,26 @@ function App() {
             </tr>
           </thead>
           <tbody>
-          {table.map((site, index) => (
-            <tr key={index} className="hover:bg-gray-50">
-              <td className="border px-4 py-2">{site.server_location}</td>
-              <td className="border px-4 py-2">{site.program_name}</td>
-              <td className="border px-4 py-2">{site.domain_name}</td>
-              <td className="border px-4 py-2">
-                <StatusBadge status={site.status_client} />
-              </td>
-              <td className="border px-4 py-2">{site.backend_url.split("/api")[0]}</td>
-              <td className="border px-4 py-2">
-                <StatusBadge status={site.status_server} />
-              </td>
-            </tr>
-          ))}
+          {table
+            .filter(site =>
+              site.program_name.toLowerCase().includes(search.toLowerCase()) ||
+              site.domain_name.toLowerCase().includes(search.toLowerCase()) ||
+              site.server_location.toLowerCase().includes(search.toLowerCase())
+            )
+            .map((site, index) => (
+              <tr key={index} className="hover:bg-gray-50">
+                <td className="border px-4 py-2">{site.server_location}</td>
+                <td className="border px-4 py-2">{site.program_name}</td>
+                <td className="border px-4 py-2">{site.domain_name}</td>
+                <td className="border px-4 py-2">
+                  <StatusBadge status={site.status_client} />
+                </td>
+                <td className="border px-4 py-2">{site.backend_url.split("/api")[0]}</td>
+                <td className="border px-4 py-2">
+                  <StatusBadge status={site.status_server} />
+                </td>
+              </tr>
+            ))}
         </tbody>
         </table>
       </div>
