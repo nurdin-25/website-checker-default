@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from "react";
-import WebsiteList, { type WebsiteListWithStatusInterface } from "./data/website";
+import { type WebsiteListInterface, type WebsiteListWithStatusInterface } from "./data/website";
 import axios from "axios";
 
 const backend = import.meta.env.VITE_BACKEND_URL;
@@ -24,45 +24,51 @@ function App() {
   const [table, setTable] = useState<Array<WebsiteListWithStatusInterface>>([]);
   const [serverName, setServerName] = useState<string>("ALL");
   const [search, setSearch] = useState<string>("");
+  const [data, setData] = useState<Array<WebsiteListInterface>>([]);
+
+  const fetchData = async () => {
+    try {
+      const response = await axios.get(`${backend}/get-data-client`);
+      setData(response.data.data);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    }
+  }
 
   const getStatus = async () => {
-    const dataTable: Array<WebsiteListWithStatusInterface> = await Promise.all(WebsiteList.filter((website) => {
+    await Promise.all(data.filter((website) => {
       if (serverName !== "ALL") {
         return website.server_location === serverName
       }
       return 1;
     }).map(async (website) => {
-      const status_client = await axios.get(`${backend}/check?url=${website.domain_name}`).then((res) => res.data.status);
-      const status_server = await axios.get(`${website.backend_url}`).then((data) => data.status).catch((_err) => null);
-      return {
+      const status_client = website.domain_name.length 
+        ? await axios.get(`${backend}/check?url=${website.domain_name}`).then((res) => res.data.status)
+        : false;
+      const status_server = website.backend_url.length
+        ? await axios.get(`${website.backend_url}`).then((data) => data.status).catch((_err) => null)
+        : 404;
+
+      setTable((prev) => [...prev, {
         server_location: website.server_location,
         domain_name: website.domain_name,
         program_name: website.program_name,
         status_client,
         backend_url: website.backend_url,
         status_server: status_server === 200,
-      }
+      }]);
     }));
-
-    const filteredData = dataTable.filter((website) => {
-      if (!search) return true;
-      const lowerSearch = search.toLowerCase();
-
-      return (
-        website.domain_name.toLowerCase().includes(lowerSearch) ||
-        website.program_name.toLowerCase().includes(lowerSearch) ||
-        website.backend_url.toLowerCase().includes(lowerSearch)
-      );
-    });
-
-    console.log(filteredData);
-
-    setTable(filteredData);
   }
 
   useEffect(() => {
-    getStatus();
+    fetchData();
   }, []);
+
+  useEffect(() => {
+    if (data.length > 0) {
+      getStatus();
+    }
+  }, [data]);
 
   return (
     <>
