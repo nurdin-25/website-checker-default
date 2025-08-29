@@ -9,30 +9,29 @@ import {
 
 const backend = import.meta.env.VITE_BACKEND_URL;
 
-// tipe status fleksibel (boolean lama / string baru)
-type ClientStatus = boolean | "ONLINE" | "ONLINE_PROTECTED" | "OFFLINE";
-
-const StatusBadge: React.FC<{ status: ClientStatus }> = ({ status }) => {
-  // normalisasi
-  const normalized =
-    typeof status === "boolean"
-      ? status
-        ? "ONLINE"
-        : "OFFLINE"
-      : status;
-
-  const palette =
-    normalized === "ONLINE"
-      ? { cls: "bg-green-100 text-green-700", label: "Online" }
-      : normalized === "ONLINE_PROTECTED"
-      ? { cls: "bg-amber-100 text-amber-700", label: "Online – Protected" }
-      : { cls: "bg-red-100 text-red-700", label: "Offline" };
-
+// Badge boolean (tetap kompatibel dgn interface lama)
+const StatusBadge: React.FC<{ status: boolean }> = ({ status }) => {
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium ${palette.cls}`}>
-      {palette.label}
+    <span
+      className={`px-2 py-1 rounded-full text-xs font-medium ${
+        status ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+      }`}
+    >
+      {status ? "Online" : "Offline"}
     </span>
   );
+};
+
+// helper: ubah respon status (boolean/string) -> boolean
+const toBool = (s: unknown): boolean => {
+  if (typeof s === "boolean") return s;
+  if (typeof s === "string") {
+    const up = s.toUpperCase();
+    // ONLINE_PROTECTED & ONLINE dihitung online
+    if (up === "ONLINE" || up === "ONLINE_PROTECTED") return true;
+    if (up === "OFFLINE") return false;
+  }
+  return false; // fallback aman
 };
 
 function App() {
@@ -69,53 +68,40 @@ function App() {
     );
   }, [data, serverName, search]);
 
-  const normalizeClientStatus = (status: any): ClientStatus => {
-    // dukung backend lama & baru
-    if (typeof status === "boolean") return status;
-    if (typeof status === "string") {
-      const s = status.toUpperCase();
-      if (s === "ONLINE" || s === "ONLINE_PROTECTED" || s === "OFFLINE") return s as ClientStatus;
-    }
-    // fallback: anggap offline
-    return "OFFLINE";
-  };
-
   const getStatus = async () => {
     setLoading(true);
-    // kosongkan tabel saat refresh
-    setTable([]);
+    setTable([]); // kosongkan dulu saat refresh
 
     const results = await Promise.allSettled(
       filteredList.map(async (website) => {
-        // 1) status client (via backend checker)
-        let status_client: ClientStatus = "OFFLINE";
+        // 1) status client dari backend checker
+        let status_client_bool = false;
         if (website.domain_name?.length) {
           try {
             const res = await axios.get(`${backend}/check`, {
               params: { url: website.domain_name },
               timeout: 8000,
             });
-            status_client = normalizeClientStatus(res.data?.status);
-          } catch (_e) {
-            status_client = "OFFLINE";
+            status_client_bool = toBool(res.data?.status);
+          } catch {
+            status_client_bool = false;
           }
         }
 
         // 2) status server (origin/backend)
-        // gunakan HEAD (lebih ringan), fallback GET
         let status_server_bool = false;
         if (website.backend_url?.length) {
           try {
             const head = await axios.head(website.backend_url, { timeout: 6000 });
             status_server_bool = head.status >= 200 && head.status < 400;
-          } catch (_e1) {
+          } catch {
             try {
               const get = await axios.get(website.backend_url, {
                 timeout: 8000,
                 validateStatus: () => true,
               });
               status_server_bool = get.status >= 200 && get.status < 400;
-            } catch (_e2) {
+            } catch {
               status_server_bool = false;
             }
           }
@@ -125,7 +111,7 @@ function App() {
           server_location: website.server_location,
           domain_name: website.domain_name,
           program_name: website.program_name,
-          status_client,
+          status_client: status_client_bool, // <- boolean
           backend_url: website.backend_url,
           status_server: status_server_bool,
         };
@@ -145,16 +131,12 @@ function App() {
     fetchData();
   }, []);
 
-  // otomatis cek saat data pertama kali ada
   useEffect(() => {
     if (data.length > 0) getStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  // jika filter server berubah, refresh hasil
   useEffect(() => {
     if (data.length > 0) getStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverName]);
 
   return (
@@ -227,7 +209,7 @@ function App() {
                   <td className="border px-4 py-2">{site.program_name}</td>
                   <td className="border px-4 py-2">{site.domain_name}</td>
                   <td className="border px-4 py-2">
-                    <StatusBadge status={site.status_client as ClientStatus} />
+                    <StatusBadge status={site.status_client} />
                   </td>
                   <td className="border px-4 py-2">
                     {site.backend_url?.split("/api")[0] || "-"}
