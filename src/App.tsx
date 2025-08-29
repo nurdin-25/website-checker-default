@@ -154,9 +154,12 @@ function App() {
             serverOnline = isServerOnlineFromAxiosResponse(get);
           }
         } catch {
-          serverOnline = false; // benar2 tidak bisa dihubungi
+          serverOnline = false; // benar2 tidak bisa dihubungi (misal Apache mati)
         }
       }
+
+      // Jika backend_url kosong, status server offline
+      if (!website.backend_url) serverOnline = false;
 
       return {
         row: {
@@ -177,6 +180,21 @@ function App() {
       if (r) {
         nextTable.push(r.row);
         nextMode[r.row.domain_name] = r.mode;
+      }
+    });
+
+    // Tambahkan data yang tidak lolos filter sebagai offline
+    data.forEach((site) => {
+      if (!filteredList.find((f) => f.domain_name === site.domain_name)) {
+        nextTable.push({
+          server_location: site.server_location,
+          domain_name: site.domain_name,
+          program_name: site.program_name,
+          status_client: false,
+          backend_url: site.backend_url,
+          status_server: false,
+        });
+        nextMode[site.domain_name] = "offline";
       }
     });
 
