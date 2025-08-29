@@ -4,7 +4,6 @@ import {
   type WebsiteListInterface,
   type WebsiteListWithStatusInterface,
 } from "./data/website";
-import { isServerOnlineFromAxiosResponse } from "./helper";
 import ClientBadge from "./component/ClientBadge";
 import ServerBadge from "./component/ServerBadge";
 import { BarLoader, BeatLoader } from "react-spinners";
