@@ -50,6 +50,45 @@ function App() {
     }
   }, [page, limit, selectedServer, search]);
 
+  const [idle, setIdle] = useState(false);
+  const idleTimer = useRef<number | null>(null);
+  const refreshTimer = useRef<number | null>(null);
+
+  const resetIdle = useCallback(() => {
+    setIdle(false);
+    if (idleTimer.current) window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => {
+      setIdle(true);
+    }, 60 * 1000);
+  }, []);
+
+  useEffect(() => {
+    const events = ["mousemove", "keydown", "click", "scroll"];
+    events.forEach((event) => window.addEventListener(event, resetIdle));
+
+    resetIdle();
+
+    return () => {
+      events.forEach((event) =>
+        window.removeEventListener(event, resetIdle)
+      );
+      if (idleTimer.current) window.clearTimeout(idleTimer.current);
+      if (refreshTimer.current) window.clearInterval(refreshTimer.current);
+    };
+  }, [resetIdle]);
+
+  useEffect(() => {
+    if (idle) {
+      fetchData();
+
+      refreshTimer.current = window.setInterval(() => {
+        fetchData();
+      }, 5 * 60 * 1000);
+    } else {
+      if (refreshTimer.current) window.clearInterval(refreshTimer.current);
+    }
+  }, [idle, fetchData]);
+
   const getStatus = useCallback(async () => {
     const rows: WebsiteListWithStatusInterface[] = [];
 
@@ -63,8 +102,6 @@ function App() {
         });
         client = res.data.status === true || res.data.cloudflareBlocked === true;
       }
-
-      console.log(client);
 
       let serverOnline = false;
       if (website.backend_url) {
