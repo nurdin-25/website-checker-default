@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import axios from "axios";
 import {
   type WebsiteListInterface,
@@ -77,6 +77,7 @@ function App() {
   const [search, setSearch] = useState<string>("");
   const [data, setData] = useState<Array<WebsiteListInterface>>([]);
   const [loading, setLoading] = useState(false);
+  const tableRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async () => {
     try {
@@ -177,6 +178,11 @@ function App() {
   useEffect(() => { fetchData(); }, []);
   useEffect(() => { if (data.length > 0) getStatus(); }, [data]);
   useEffect(() => { if (data.length > 0) getStatus(); }, [serverName]);
+  useEffect(() => {
+    if (tableRef.current) {
+      tableRef.current.scrollTop = tableRef.current.scrollHeight;
+    }
+  }, [table]);
 
   return (
     <>
@@ -219,7 +225,7 @@ function App() {
         </div>
       </div>
 
-      <div className="overflow-x-auto m-5">
+      <div ref={tableRef} className="overflow-x-auto m-5" style={{ maxHeight: "70vh", overflowY: "auto" }}>
         <table className="min-w-full border border-gray-300 text-sm">
           <thead className="bg-gray-100">
             <tr>
