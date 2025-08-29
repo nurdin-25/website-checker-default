@@ -4,7 +4,7 @@ import {
   type WebsiteListInterface,
   type WebsiteListWithStatusInterface,
 } from "./data/website";
-import { classifyClient, isServerOnlineFromAxiosResponse } from "./helper";
+import { isServerOnlineFromAxiosResponse } from "./helper";
 import ClientBadge from "./component/ClientBadge";
 import ServerBadge from "./component/ServerBadge";
 import { BarLoader, BeatLoader } from "react-spinners";
@@ -31,12 +31,13 @@ function App() {
   const [totalItem, setTotalItem] = useState(0);
   const tableRef = useRef<HTMLDivElement>(null);
   const [selectedServer, setSelectedServer] = useState<string>("ALL");
+  const [search, setSearch] = useState<string>("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const { data: response } = await axios.get<ResponseFetch>(
-        `${backend}/get-data-client?page=${page}&limit=${limit}&selectedServer=${selectedServer}`,
+        `${backend}/get-data-client?page=${page}&limit=${limit}&selectedServer=${selectedServer}&search=${search}`,
         { validateStatus: () => true }
       );
       setData(response.data.items || []);
@@ -47,25 +48,23 @@ function App() {
       setTotalItem(0);
       setTotalPage(0);
     }
-  }, [page, limit, selectedServer]);
+  }, [page, limit, selectedServer, search]);
 
   const getStatus = useCallback(async () => {
     const rows: WebsiteListWithStatusInterface[] = [];
 
     for (const website of data) {
-      let client: { bool: boolean; mode: "online" | "protected" | "offline" } = { bool: false, mode: "offline" };
+      let client: boolean = false;
       if (website.domain_name) {
-        try {
-          const res = await axios.get(`${backend}/check`, {
-            params: { url: website.domain_name },
-            timeout: 12000,
-            validateStatus: () => true,
-          });
-          client = classifyClient({ status: res.status, data: res.data });
-        } catch (err) {
-          client = classifyClient(undefined, err);
-        }
+        const res = await axios.get(`${backend}/check`, {
+          params: { url: website.domain_name },
+          timeout: 12000,
+          validateStatus: () => true,
+        });
+        client = res.data.status === true || res.data.cloudflareBlocked === true;
       }
+
+      console.log(client);
 
       let serverOnline = false;
       if (website.backend_url) {
@@ -92,7 +91,7 @@ function App() {
         server_location: website.server_location,
         domain_name: website.domain_name,
         program_name: website.program_name,
-        status_client: client.bool,
+        status_client: client,
         backend_url: website.backend_url,
         status_server: serverOnline,
       });
@@ -121,6 +120,11 @@ function App() {
     setPage(1);
   };
 
+  const handleSearch = (search: string) => {
+    setSearch(search);
+    setPage(1);
+  }
+
   return (
     <>
       <h1 className="text-center m-3 text-5xl font-bold">Domain Checker</h1>
@@ -135,19 +139,18 @@ function App() {
               <option value="biznet-2">Biznet 2</option>
             </select>
           </div>
-          <div className="w-auto flex flex-col">
+            <div className="w-auto flex flex-col">
             <label className="mb-1 font-bold">Search</label>
-            <input placeholder="Search" className="bg-white p-3 rounded w-80" />
-          </div>
-          <div className="flex items-end gap-2">
-            <button
-              disabled={loading}
-              className="m-0 p-3 bg-white rounded border"
-              onClick={fetchData}
-            >
-              {loading ? "Checking..." : "Cari"}
-            </button>
-          </div>
+            <input
+              onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleSearch(e.currentTarget.value);
+              }
+              }}
+              placeholder="Search"
+              className="bg-white p-3 rounded w-80"
+            />
+            </div>
         </div>
       </div>
         {
@@ -183,22 +186,34 @@ function App() {
                   </td>
                 </tr>
               ) : (
-                table.map((site, index) => (
-                <tr key={`${site.program_name}-${index}`} className="hover:bg-gray-50">
-                  <td className="border px-4 py-2">{site.server_location}</td>
-                  <td className="border px-4 py-2">{site.program_name}</td>
-                  <td className="border px-4 py-2">{site.domain_name}</td>
-                  <td className="border px-4 py-2">
-                  <ClientBadge mode={site.status_client ? "online" : "offline"} />
-                  </td>
-                  <td className="border px-4 py-2">
-                  {site.backend_url?.split("/api")[0] || "-"}
-                  </td>
-                  <td className="border px-4 py-2">
-                  <ServerBadge status={site.status_server} />
-                  </td>
-                </tr>
+                table.length > 0
+                ? table.map((site, index) => (
+                  <tr key={`${site.program_name}-${index}`} className="hover:bg-gray-50">
+                    <td className="border px-4 py-2">{site.server_location}</td>
+                    <td className="border px-4 py-2">{site.program_name}</td>
+                    <td className="border px-4 py-2">{site.domain_name}</td>
+                    <td className="border px-4 py-2">
+                      <ClientBadge mode={site.status_client} />
+                    </td>
+                    <td className="border px-4 py-2">
+                      {site.backend_url?.split("/api")[0] || "-"}
+                    </td>
+                    <td className="border px-4 py-2">
+                    <ServerBadge status={site.status_server} />
+                    </td>
+                  </tr>
                 ))
+                : (
+                  <>
+                    <tr>
+                      <td colSpan={6} className="text-center py-6">
+                        <div className="p-5">
+                          <h2>Data Kosong</h2>
+                        </div>
+                      </td>
+                    </tr>
+                  </>
+                )
               )}
             </tbody>
           </table>
@@ -211,7 +226,7 @@ function App() {
               Prev
             </button>
             {
-              loading ?? (<>
+              !loading && (<>
                 <span>Page {page}</span>
                 <span>/ {totalPage}</span>
               </>)
