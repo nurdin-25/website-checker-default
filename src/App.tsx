@@ -33,22 +33,6 @@ const ServerBadge: React.FC<{ status: boolean }> = ({ status }) => (
 
 // ---- Helpers ----
 
-// Pool sederhana agar tidak menembak ratusan request sekaligus
-async function mapPool<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length) as any;
-  let i = 0;
-  const run = async () => {
-    while (true) {
-      const idx = i++;
-      if (idx >= items.length) return;
-      results[idx] = await worker(items[idx]);
-    }
-  };
-  const runners = Array.from({ length: Math.min(limit, items.length) }, run);
-  await Promise.all(runners);
-  return results;
-}
-
 // Klasifikasi status client dari response /check
 function classifyClient(res?: { status: number; data?: any }, err?: any):
   { bool: boolean; mode: "online" | "protected" | "offline" } {
