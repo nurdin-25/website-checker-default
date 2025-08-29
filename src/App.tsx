@@ -80,6 +80,7 @@ function App() {
   const [page, setPage] = useState(1);
   const pageSize = 50;
   const tableRef = useRef<HTMLDivElement>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
 
   const fetchData = async () => {
     try {
@@ -181,10 +182,22 @@ function App() {
   useEffect(() => { if (data.length > 0) getStatus(); }, [data]);
   useEffect(() => { if (data.length > 0) getStatus(); }, [serverName]);
   useEffect(() => {
-    if (tableRef.current) {
+    const ref = tableRef.current;
+    if (!ref) return;
+    const handleScroll = () => {
+      // Jika posisi scroll sudah di bawah, aktifkan autoScroll
+      const isBottom = ref.scrollHeight - ref.scrollTop - ref.clientHeight < 10;
+      setAutoScroll(isBottom);
+    };
+    ref.addEventListener("scroll", handleScroll);
+    return () => ref.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    if (autoScroll && tableRef.current) {
       tableRef.current.scrollTop = tableRef.current.scrollHeight;
     }
-  }, [table]);
+  }, [table, autoScroll]);
   // Reset page saat filter berubah
   useEffect(() => { setPage(1); }, [search, serverName]);
 
@@ -229,10 +242,12 @@ function App() {
         </div>
       </div>
 
+      <div className="mb-2 ml-5 font-bold">Total Toko: {table.length}</div>
       <div ref={tableRef} className="overflow-x-auto m-5" style={{ maxHeight: "70vh", overflowY: "auto" }}>
         <table className="min-w-full border border-gray-300 text-sm">
           <thead className="bg-gray-100">
             <tr>
+              <th className="border px-4 py-2 text-left">No</th>
               <th className="border px-4 py-2 text-left">Server Location</th>
               <th className="border px-4 py-2 text-left">Program Name</th>
               <th className="border px-4 py-2 text-left">Domain Name</th>
@@ -255,8 +270,10 @@ function App() {
               .slice((page - 1) * pageSize, page * pageSize)
               .map((site, index) => {
                 const mode = clientModeMap[site.domain_name] ?? (site.status_client ? "online" : "offline");
+                const no = (page - 1) * pageSize + index + 1;
                 return (
                   <tr key={`${site.program_name}-${index}`} className="hover:bg-gray-50">
+                    <td className="border px-4 py-2">{no}</td>
                     <td className="border px-4 py-2">{site.server_location}</td>
                     <td className="border px-4 py-2">{site.program_name}</td>
                     <td className="border px-4 py-2">{site.domain_name}</td>
