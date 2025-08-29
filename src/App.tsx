@@ -81,6 +81,8 @@ function App() {
   const pageSize = 50;
   const tableRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const stopRef = useRef(false);
 
   const fetchData = async () => {
     try {
@@ -105,10 +107,13 @@ function App() {
 
   const getStatus = async () => {
     setLoading(true);
+    setSearching(true);
     setTable([]);
     setClientModeMap({});
+    stopRef.current = false;
 
     for (const website of filteredList) {
+      if (stopRef.current) break;
       // --- Client status via /check ---
       let client: { bool: boolean; mode: "online" | "protected" | "offline" } = { bool: false, mode: "offline" };
       if (website.domain_name?.length) {
@@ -176,16 +181,23 @@ function App() {
     });
 
     setLoading(false);
+    setSearching(false);
+  };
+
+  const stopSearch = () => {
+    stopRef.current = true;
+    setLoading(false);
+    setSearching(false);
   };
 
   useEffect(() => { fetchData(); }, []);
-  useEffect(() => { if (data.length > 0) getStatus(); }, [data]);
-  useEffect(() => { if (data.length > 0) getStatus(); }, [serverName]);
+  // Hapus auto getStatus di useEffect
+  // useEffect(() => { if (data.length > 0) getStatus(); }, [data]);
+  // useEffect(() => { if (data.length > 0) getStatus(); }, [serverName]);
   useEffect(() => {
     const ref = tableRef.current;
     if (!ref) return;
     const handleScroll = () => {
-      // Jika posisi scroll sudah di bawah, aktifkan autoScroll
       const isBottom = ref.scrollHeight - ref.scrollTop - ref.clientHeight < 10;
       setAutoScroll(isBottom);
     };
@@ -198,13 +210,11 @@ function App() {
       tableRef.current.scrollTop = tableRef.current.scrollHeight;
     }
   }, [table, autoScroll]);
-  // Reset page saat filter berubah
   useEffect(() => { setPage(1); }, [search, serverName]);
 
   return (
     <>
       <h1 className="text-center m-3 text-5xl font-bold">Domain Checker</h1>
-
       <div className="w-auto m-5 p-3 rounded bg-amber-200 flex-col">
         <h4 className="font-bold mb-3">Filter :</h4>
         <div className="w-auto flex flex-wrap gap-4">
@@ -234,68 +244,75 @@ function App() {
             />
           </div>
 
-          <div className="flex items-end">
-            <button onClick={getStatus} className="m-0 p-3 bg-white rounded border">
-              {loading ? "Checking..." : "Refresh"}
+          <div className="flex items-end gap-2">
+            <button onClick={getStatus} disabled={loading} className="m-0 p-3 bg-white rounded border">
+              {loading ? "Checking..." : "Cari"}
+            </button>
+            <button onClick={stopSearch} disabled={!searching} className="m-0 p-3 bg-white rounded border text-red-600">
+              Stop
             </button>
           </div>
         </div>
       </div>
 
-      <div className="mb-2 ml-5 font-bold">Total Toko: {table.length}</div>
-      <div ref={tableRef} className="overflow-x-auto m-5" style={{ maxHeight: "70vh", overflowY: "auto" }}>
-        <table className="min-w-full border border-gray-300 text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="border px-4 py-2 text-left">No</th>
-              <th className="border px-4 py-2 text-left">Server Location</th>
-              <th className="border px-4 py-2 text-left">Program Name</th>
-              <th className="border px-4 py-2 text-left">Domain Name</th>
-              <th className="border px-4 py-2 text-left">Client Status</th>
-              <th className="border px-4 py-2 text-left">Backend URL</th>
-              <th className="border px-4 py-2 text-left">Server Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {table
-              .filter((site) => {
-                const q = search.toLowerCase();
-                return (
-                  !q ||
-                  site.program_name.toLowerCase().includes(q) ||
-                  site.domain_name.toLowerCase().includes(q) ||
-                  site.server_location.toLowerCase().includes(q)
-                );
-              })
-              .slice((page - 1) * pageSize, page * pageSize)
-              .map((site, index) => {
-                const mode = clientModeMap[site.domain_name] ?? (site.status_client ? "online" : "offline");
-                const no = (page - 1) * pageSize + index + 1;
-                return (
-                  <tr key={`${site.program_name}-${index}`} className="hover:bg-gray-50">
-                    <td className="border px-4 py-2">{no}</td>
-                    <td className="border px-4 py-2">{site.server_location}</td>
-                    <td className="border px-4 py-2">{site.program_name}</td>
-                    <td className="border px-4 py-2">{site.domain_name}</td>
-                    <td className="border px-4 py-2"><ClientBadge mode={mode} /></td>
-                    <td className="border px-4 py-2">{site.backend_url?.split("/api")[0] || "-"}</td>
-                    <td className="border px-4 py-2"><ServerBadge status={site.status_server} /></td>
-                  </tr>
-                );
-              })}
-          </tbody>
-        </table>
-        {/* Pagination controls */}
-        <div className="flex justify-center items-center gap-2 my-2">
-          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-gray-200 rounded">Prev</button>
-          <span>Page {page}</span>
-          <button onClick={() => setPage((p) => p * pageSize < table.length ? p + 1 : p)} disabled={page * pageSize >= table.length} className="px-3 py-1 bg-gray-200 rounded">Next</button>
-        </div>
+      {table.length > 0 && (
+        <>
+          <div className="mb-2 ml-5 font-bold">Total Toko: {table.length}</div>
+          <div ref={tableRef} className="overflow-x-auto m-5" style={{ maxHeight: "70vh", overflowY: "auto" }}>
+            <table className="min-w-full border border-gray-300 text-sm">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="border px-4 py-2 text-left">No</th>
+                  <th className="border px-4 py-2 text-left">Server Location</th>
+                  <th className="border px-4 py-2 text-left">Program Name</th>
+                  <th className="border px-4 py-2 text-left">Domain Name</th>
+                  <th className="border px-4 py-2 text-left">Client Status</th>
+                  <th className="border px-4 py-2 text-left">Backend URL</th>
+                  <th className="border px-4 py-2 text-left">Server Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {table
+                  .filter((site) => {
+                    const q = search.toLowerCase();
+                    return (
+                      !q ||
+                      site.program_name.toLowerCase().includes(q) ||
+                      site.domain_name.toLowerCase().includes(q) ||
+                      site.server_location.toLowerCase().includes(q)
+                    );
+                  })
+                  .slice((page - 1) * pageSize, page * pageSize)
+                  .map((site, index) => {
+                    const mode = clientModeMap[site.domain_name] ?? (site.status_client ? "online" : "offline");
+                    const no = (page - 1) * pageSize + index + 1;
+                    return (
+                      <tr key={`${site.program_name}-${index}`} className="hover:bg-gray-50">
+                        <td className="border px-4 py-2">{no}</td>
+                        <td className="border px-4 py-2">{site.server_location}</td>
+                        <td className="border px-4 py-2">{site.program_name}</td>
+                        <td className="border px-4 py-2">{site.domain_name}</td>
+                        <td className="border px-4 py-2"><ClientBadge mode={mode} /></td>
+                        <td className="border px-4 py-2">{site.backend_url?.split("/api")[0] || "-"}</td>
+                        <td className="border px-4 py-2"><ServerBadge status={site.status_server} /></td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+            {/* Pagination controls */}
+            <div className="flex justify-center items-center gap-2 my-2">
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-gray-200 rounded">Prev</button>
+              <span>Page {page}</span>
+              <button onClick={() => setPage((p) => p * pageSize < table.length ? p + 1 : p)} disabled={page * pageSize >= table.length} className="px-3 py-1 bg-gray-200 rounded">Next</button>
+            </div>
 
-        {table.length === 0 && !loading && (
-          <div className="text-center text-gray-500 p-6">Tidak ada data.</div>
-        )}
-      </div>
+            {table.length === 0 && !loading && (
+              <div className="text-center text-gray-500 p-6">Tidak ada data.</div>
+            )}
+          </div>
+        </>
+      )}
     </>
   );
 }
