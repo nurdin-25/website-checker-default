@@ -9,7 +9,7 @@ import {
 
 const backend = import.meta.env.VITE_BACKEND_URL;
 
-// Badge boolean (tetap kompatibel dgn interface lama)
+// Badge tetap boolean
 const StatusBadge: React.FC<{ status: boolean }> = ({ status }) => {
   return (
     <span
@@ -27,11 +27,10 @@ const toBool = (s: unknown): boolean => {
   if (typeof s === "boolean") return s;
   if (typeof s === "string") {
     const up = s.toUpperCase();
-    // ONLINE_PROTECTED & ONLINE dihitung online
     if (up === "ONLINE" || up === "ONLINE_PROTECTED") return true;
     if (up === "OFFLINE") return false;
   }
-  return false; // fallback aman
+  return false;
 };
 
 function App() {
@@ -70,40 +69,56 @@ function App() {
 
   const getStatus = async () => {
     setLoading(true);
-    setTable([]); // kosongkan dulu saat refresh
+    setTable([]);
 
     const results = await Promise.allSettled(
       filteredList.map(async (website) => {
-        // 1) status client dari backend checker
+        // --- Client Status ---
         let status_client_bool = false;
         if (website.domain_name?.length) {
           try {
             const res = await axios.get(`${backend}/check`, {
               params: { url: website.domain_name },
               timeout: 8000,
+              validateStatus: () => true, // jangan throw kalau 403/503
             });
-            status_client_bool = toBool(res.data?.status);
-          } catch {
-            status_client_bool = false;
+
+            const rawStatus =
+              res.data?.status ??
+              (typeof res.data === "string" ? res.data : undefined);
+
+            status_client_bool =
+              toBool(rawStatus) || (res.status >= 200 && res.status < 400);
+          } catch (e: any) {
+            const rawStatus =
+              e?.response?.data?.status ??
+              (typeof e?.response?.data === "string"
+                ? e.response.data
+                : undefined);
+            status_client_bool = toBool(rawStatus);
+            if (rawStatus === undefined) status_client_bool = false;
           }
         }
 
-        // 2) status server (origin/backend)
+        // --- Server Status ---
         let status_server_bool = false;
         if (website.backend_url?.length) {
           try {
-            const head = await axios.head(website.backend_url, { timeout: 6000 });
+            const head = await axios.head(website.backend_url, {
+              timeout: 6000,
+              validateStatus: () => true,
+            });
             status_server_bool = head.status >= 200 && head.status < 400;
-          } catch {
-            try {
+
+            if (!status_server_bool) {
               const get = await axios.get(website.backend_url, {
                 timeout: 8000,
                 validateStatus: () => true,
               });
               status_server_bool = get.status >= 200 && get.status < 400;
-            } catch {
-              status_server_bool = false;
             }
+          } catch {
+            status_server_bool = false;
           }
         }
 
@@ -111,7 +126,7 @@ function App() {
           server_location: website.server_location,
           domain_name: website.domain_name,
           program_name: website.program_name,
-          status_client: status_client_bool, // <- boolean
+          status_client: status_client_bool, // tetap boolean
           backend_url: website.backend_url,
           status_server: status_server_bool,
         };
