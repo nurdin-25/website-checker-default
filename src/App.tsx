@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import {
   type WebsiteListInterface,
@@ -9,14 +9,24 @@ import {
 
 const backend = import.meta.env.VITE_BACKEND_URL;
 
+interface ResponseFetch {
+  data:{
+    page: number,
+    limit: number,
+    total: number,
+    totalPages: number,
+    items: WebsiteListInterface[],
+  }
+}
+
 // === Badge 3 warna (client) ===
-const ClientBadge: React.FC<{ mode: "online" | "protected" | "offline" }> = ({ mode }) => {
+const ClientBadge: React.FC<{ mode: boolean }> = ({ mode }) => {
   const m =
-    mode === "online"
+    mode
       ? { cls: "bg-green-100 text-green-700", label: "Online" }
-      : mode === "protected"
-      ? { cls: "bg-amber-100 text-amber-700", label: "Online – Protected" }
-      : { cls: "bg-red-100 text-red-700", label: "Offline" };
+      : mode
+        ? { cls: "bg-amber-100 text-amber-700", label: "Online – Protected" }
+        : { cls: "bg-red-100 text-red-700", label: "Offline" };
   return <span className={`px-2 py-1 rounded-full text-xs font-medium ${m.cls}`}>{m.label}</span>;
 };
 
@@ -72,47 +82,26 @@ function isServerOnlineFromAxiosResponse(r?: { status?: number }) {
 
 function App() {
   const [table, setTable] = useState<Array<WebsiteListWithStatusInterface>>([]);
-  const [clientModeMap, setClientModeMap] = useState<Record<string, "online" | "protected" | "offline">>({});
-  const [serverName, setServerName] = useState<string>("ALL");
-  const [search, setSearch] = useState<string>("");
   const [data, setData] = useState<Array<WebsiteListInterface>>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const [limit, setLimit] = useState(10);
   const tableRef = useRef<HTMLDivElement>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [searching, setSearching] = useState(false);
   const stopRef = useRef(false);
 
   const fetchData = async () => {
     try {
-      const response = await axios.get(`${backend}/get-data-client`, { validateStatus: () => true });
-      setData(response.data.data || []);
+      const response = await axios.get<ResponseFetch>(`${backend}/get-data-client?page=${page}&limit=${limit}`, { validateStatus: () => true });
+      setData(response.data.data.items || []);
     } catch {
       setData([]);
     }
   };
 
-  const filteredList = useMemo(() => {
-    const byServer = serverName === "ALL" ? data : data.filter((w) => w.server_location === serverName);
-    if (!search.trim()) return byServer;
-    const q = search.toLowerCase();
-    return byServer.filter(
-      (site) =>
-        site.program_name.toLowerCase().includes(q) ||
-        site.domain_name.toLowerCase().includes(q) ||
-        site.server_location.toLowerCase().includes(q)
-    );
-  }, [data, serverName, search]);
-
   const getStatus = async () => {
     setLoading(true);
-    setSearching(true);
-    setTable([]);
-    setClientModeMap({});
-    stopRef.current = false;
 
-    for (const website of filteredList) {
+    for (const website of data) {
       if (stopRef.current) break;
       // --- Client status via /check ---
       let client: { bool: boolean; mode: "online" | "protected" | "offline" } = { bool: false, mode: "offline" };
@@ -162,57 +151,20 @@ function App() {
       };
 
       setTable((prev) => [...prev, row]);
-      setClientModeMap((prev) => ({ ...prev, [website.domain_name]: client.mode }));
     }
 
-    // Tambahkan data yang tidak lolos filter sebagai offline
-    data.forEach((site) => {
-      if (!filteredList.find((f) => f.domain_name === site.domain_name)) {
-        setTable((prev) => [...prev, {
-          server_location: site.server_location,
-          domain_name: site.domain_name,
-          program_name: site.program_name,
-          status_client: false,
-          backend_url: site.backend_url,
-          status_server: false,
-        }]);
-        setClientModeMap((prev) => ({ ...prev, [site.domain_name]: "offline" }));
-      }
-    });
-
     setLoading(false);
-    setSearching(false);
   };
 
-  const stopSearch = () => {
-    stopRef.current = true;
-    setLoading(false);
-    setSearching(false);
-  };
-
-  useEffect(() => { fetchData(); }, []);
-  // Hapus auto getStatus di useEffect
-  // useEffect(() => { if (data.length > 0) getStatus(); }, [data]);
-  // useEffect(() => { if (data.length > 0) getStatus(); }, [serverName]);
   useEffect(() => {
-    const ref = tableRef.current;
-    if (!ref) return;
-    const handleScroll = () => {
-      // Deteksi apakah user sedang scroll manual
-      const isBottom = ref.scrollHeight - ref.scrollTop - ref.clientHeight < 10;
-      setAutoScroll(isBottom);
-    };
-    ref.addEventListener("scroll", handleScroll);
-    return () => ref.removeEventListener("scroll", handleScroll);
+    fetchData();
   }, []);
 
   useEffect(() => {
-    // Scroll otomatis hanya jika posisi di bawah
-    if (autoScroll && tableRef.current) {
-      tableRef.current.scrollTop = tableRef.current.scrollHeight;
+    if (data.length) {
+      getStatus();
     }
-  }, [table, autoScroll]);
-  useEffect(() => { setPage(1); }, [search, serverName]);
+  }, [table]);
 
   return (
     <>
@@ -223,8 +175,6 @@ function App() {
           <div className="w-auto flex flex-col">
             <label className="mb-1 font-bold">Select Server</label>
             <select
-              value={serverName}
-              onChange={(e) => setServerName(e.target.value)}
               className="bg-white rounded p-3 w-56"
             >
               <option value="ALL">All</option>
@@ -241,16 +191,15 @@ function App() {
             <label className="mb-1 font-bold">Search</label>
             <input
               placeholder="Search"
-              onChange={(e) => setSearch(e.target.value)}
               className="bg-white p-3 rounded w-80"
             />
           </div>
 
           <div className="flex items-end gap-2">
-            <button onClick={getStatus} disabled={loading} className="m-0 p-3 bg-white rounded border">
+            <button disabled={loading} className="m-0 p-3 bg-white rounded border">
               {loading ? "Checking..." : "Cari"}
             </button>
-            <button onClick={stopSearch} disabled={!searching} className="m-0 p-3 bg-white rounded border text-red-600">
+            <button className="m-0 p-3 bg-white rounded border text-red-600">
               Stop
             </button>
           </div>
@@ -275,26 +224,13 @@ function App() {
               </thead>
               <tbody>
                 {table
-                  .filter((site) => {
-                    const q = search.toLowerCase();
-                    return (
-                      !q ||
-                      site.program_name.toLowerCase().includes(q) ||
-                      site.domain_name.toLowerCase().includes(q) ||
-                      site.server_location.toLowerCase().includes(q)
-                    );
-                  })
-                  .slice((page - 1) * pageSize, page * pageSize)
                   .map((site, index) => {
-                    const mode = clientModeMap[site.domain_name] ?? (site.status_client ? "online" : "offline");
-                    const no = (page - 1) * pageSize + index + 1;
                     return (
                       <tr key={`${site.program_name}-${index}`} className="hover:bg-gray-50">
-                        <td className="border px-4 py-2">{no}</td>
                         <td className="border px-4 py-2">{site.server_location}</td>
                         <td className="border px-4 py-2">{site.program_name}</td>
                         <td className="border px-4 py-2">{site.domain_name}</td>
-                        <td className="border px-4 py-2"><ClientBadge mode={mode} /></td>
+                        <td className="border px-4 py-2"><ClientBadge mode={site.status_client} /></td>
                         <td className="border px-4 py-2">{site.backend_url?.split("/api")[0] || "-"}</td>
                         <td className="border px-4 py-2"><ServerBadge status={site.status_server} /></td>
                       </tr>
@@ -304,9 +240,9 @@ function App() {
             </table>
             {/* Pagination controls */}
             <div className="flex justify-center items-center gap-2 my-2">
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-gray-200 rounded">Prev</button>
+              <button className="px-3 py-1 bg-gray-200 rounded">Prev</button>
               <span>Page {page}</span>
-              <button onClick={() => setPage((p) => p * pageSize < table.length ? p + 1 : p)} disabled={page * pageSize >= table.length} className="px-3 py-1 bg-gray-200 rounded">Next</button>
+              <button className="px-3 py-1 bg-gray-200 rounded">Next</button>
             </div>
 
             {table.length === 0 && !loading && (
