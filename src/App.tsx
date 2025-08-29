@@ -77,6 +77,8 @@ function App() {
   const [search, setSearch] = useState<string>("");
   const [data, setData] = useState<Array<WebsiteListInterface>>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const tableRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async () => {
@@ -183,6 +185,8 @@ function App() {
       tableRef.current.scrollTop = tableRef.current.scrollHeight;
     }
   }, [table]);
+  // Reset page saat filter berubah
+  useEffect(() => { setPage(1); }, [search, serverName]);
 
   return (
     <>
@@ -248,6 +252,7 @@ function App() {
                   site.server_location.toLowerCase().includes(q)
                 );
               })
+              .slice((page - 1) * pageSize, page * pageSize)
               .map((site, index) => {
                 const mode = clientModeMap[site.domain_name] ?? (site.status_client ? "online" : "offline");
                 return (
@@ -263,6 +268,12 @@ function App() {
               })}
           </tbody>
         </table>
+        {/* Pagination controls */}
+        <div className="flex justify-center items-center gap-2 my-2">
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-gray-200 rounded">Prev</button>
+          <span>Page {page}</span>
+          <button onClick={() => setPage((p) => p * pageSize < table.length ? p + 1 : p)} disabled={page * pageSize >= table.length} className="px-3 py-1 bg-gray-200 rounded">Next</button>
+        </div>
 
         {table.length === 0 && !loading && (
           <div className="text-center text-gray-500 p-6">Tidak ada data.</div>
