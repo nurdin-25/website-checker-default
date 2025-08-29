@@ -9,32 +9,72 @@ import {
 
 const backend = import.meta.env.VITE_BACKEND_URL;
 
-// Badge tetap boolean
-const StatusBadge: React.FC<{ status: boolean }> = ({ status }) => {
+// === Badge 3 warna (mode dari map terpisah) ===
+const ClientBadge: React.FC<{ mode: "online" | "protected" | "offline" }> = ({
+  mode,
+}) => {
+  const m =
+    mode === "online"
+      ? { cls: "bg-green-100 text-green-700", label: "Online" }
+      : mode === "protected"
+      ? { cls: "bg-amber-100 text-amber-700", label: "Online – Protected" }
+      : { cls: "bg-red-100 text-red-700", label: "Offline" };
   return (
-    <span
-      className={`px-2 py-1 rounded-full text-xs font-medium ${
-        status ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-      }`}
-    >
-      {status ? "Online" : "Offline"}
+    <span className={`px-2 py-1 rounded-full text-xs font-medium ${m.cls}`}>
+      {m.label}
     </span>
   );
 };
 
-// helper: ubah respon status (boolean/string) -> boolean
-const toBool = (s: unknown): boolean => {
-  if (typeof s === "boolean") return s;
-  if (typeof s === "string") {
-    const up = s.toUpperCase();
-    if (up === "ONLINE" || up === "ONLINE_PROTECTED") return true;
-    if (up === "OFFLINE") return false;
-  }
-  return false;
-};
+const ServerBadge: React.FC<{ status: boolean }> = ({ status }) => (
+  <span
+    className={`px-2 py-1 rounded-full text-xs font-medium ${
+      status ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+    }`}
+  >
+    {status ? "Online" : "Offline"}
+  </span>
+);
+
+// helper: klasifikasikan status dari response/error backend /check
+function classifyClientStatus(
+  res?: { status: number; data?: any },
+  err?: any
+): { bool: boolean; mode: "online" | "protected" | "offline" } {
+  const fromVal = (v: any) => {
+    if (typeof v === "boolean") {
+      return v ? { bool: true, mode: "online" as const } : { bool: false, mode: "offline" as const };
+    }
+    if (typeof v === "string") {
+      const s = v.toUpperCase();
+      if (s === "ONLINE") return { bool: true, mode: "online" as const };
+      if (s === "ONLINE_PROTECTED") return { bool: true, mode: "protected" as const };
+      if (s === "OFFLINE") return { bool: false, mode: "offline" as const };
+    }
+    return null;
+  };
+
+  // jika ada body status yang eksplisit
+  const v1 =
+    res?.data?.status ??
+    (typeof res?.data === "string" ? res?.data : undefined) ??
+    err?.response?.data?.status ??
+    (typeof err?.response?.data === "string" ? err?.response?.data : undefined);
+  const parsed = fromVal(v1);
+  if (parsed) return parsed;
+
+  // fallback pakai HTTP status dari /check
+  const code = res?.status ?? err?.response?.status ?? 0;
+  if (code >= 200 && code < 400) return { bool: true, mode: "online" };
+  if (code === 403 || code === 503) return { bool: true, mode: "protected" };
+  return { bool: false, mode: "offline" };
+}
 
 function App() {
   const [table, setTable] = useState<Array<WebsiteListWithStatusInterface>>([]);
+  const [clientModeMap, setClientModeMap] = useState<
+    Record<string, "online" | "protected" | "offline">
+  >({});
   const [serverName, setServerName] = useState<string>("ALL");
   const [search, setSearch] = useState<string>("");
   const [data, setData] = useState<Array<WebsiteListInterface>>([]);
@@ -70,37 +110,30 @@ function App() {
   const getStatus = async () => {
     setLoading(true);
     setTable([]);
+    setClientModeMap({});
 
     const results = await Promise.allSettled(
       filteredList.map(async (website) => {
-        // --- Client Status ---
-        let status_client_bool = false;
+        // --- Client Status via backend /check ---
+        let clientResult: { bool: boolean; mode: "online" | "protected" | "offline" } = {
+          bool: false,
+          mode: "offline",
+        };
+
         if (website.domain_name?.length) {
           try {
             const res = await axios.get(`${backend}/check`, {
               params: { url: website.domain_name },
-              timeout: 8000,
-              validateStatus: () => true, // jangan throw kalau 403/503
+              timeout: 9000,
+              validateStatus: () => true, // jangan throw utk 403/503
             });
-
-            const rawStatus =
-              res.data?.status ??
-              (typeof res.data === "string" ? res.data : undefined);
-
-            status_client_bool =
-              toBool(rawStatus) || (res.status >= 200 && res.status < 400);
-          } catch (e: any) {
-            const rawStatus =
-              e?.response?.data?.status ??
-              (typeof e?.response?.data === "string"
-                ? e.response.data
-                : undefined);
-            status_client_bool = toBool(rawStatus);
-            if (rawStatus === undefined) status_client_bool = false;
+            clientResult = classifyClientStatus({ status: res.status, data: res.data });
+          } catch (err: any) {
+            clientResult = classifyClientStatus(undefined, err);
           }
         }
 
-        // --- Server Status ---
+        // --- Server Status (origin/backend) ---
         let status_server_bool = false;
         if (website.backend_url?.length) {
           try {
@@ -112,7 +145,7 @@ function App() {
 
             if (!status_server_bool) {
               const get = await axios.get(website.backend_url, {
-                timeout: 8000,
+                timeout: 9000,
                 validateStatus: () => true,
               });
               status_server_bool = get.status >= 200 && get.status < 400;
@@ -122,23 +155,34 @@ function App() {
           }
         }
 
-        const row: WebsiteListWithStatusInterface = {
-          server_location: website.server_location,
-          domain_name: website.domain_name,
-          program_name: website.program_name,
-          status_client: status_client_bool, // tetap boolean
-          backend_url: website.backend_url,
-          status_server: status_server_bool,
+        // simpan mode untuk rendering badge kuning/merah/hijau (key pakai domain_name unik)
+        // tidak mengubah interface
+        return {
+          row: {
+            server_location: website.server_location,
+            domain_name: website.domain_name,
+            program_name: website.program_name,
+            status_client: clientResult.bool, // boolean utk kompatibilitas
+            backend_url: website.backend_url,
+            status_server: status_server_bool,
+          } as WebsiteListWithStatusInterface,
+          mode: clientResult.mode,
         };
-        return row;
       })
     );
 
-    const tableData: Array<WebsiteListWithStatusInterface> = results
-      .map((r) => (r.status === "fulfilled" ? r.value : null))
-      .filter((v): v is WebsiteListWithStatusInterface => v !== null);
+    const tableData: Array<WebsiteListWithStatusInterface> = [];
+    const modeMap: Record<string, "online" | "protected" | "offline"> = {};
+
+    results.forEach((r) => {
+      if (r.status === "fulfilled" && r.value) {
+        tableData.push(r.value.row);
+        modeMap[r.value.row.domain_name] = r.value.mode;
+      }
+    });
 
     setTable(tableData);
+    setClientModeMap(modeMap);
     setLoading(false);
   };
 
@@ -218,22 +262,27 @@ function App() {
                   site.server_location.toLowerCase().includes(q)
                 );
               })
-              .map((site, index) => (
-                <tr key={`${site.program_name}-${index}`} className="hover:bg-gray-50">
-                  <td className="border px-4 py-2">{site.server_location}</td>
-                  <td className="border px-4 py-2">{site.program_name}</td>
-                  <td className="border px-4 py-2">{site.domain_name}</td>
-                  <td className="border px-4 py-2">
-                    <StatusBadge status={site.status_client} />
-                  </td>
-                  <td className="border px-4 py-2">
-                    {site.backend_url?.split("/api")[0] || "-"}
-                  </td>
-                  <td className="border px-4 py-2">
-                    <StatusBadge status={site.status_server} />
-                  </td>
-                </tr>
-              ))}
+              .map((site, index) => {
+                const mode =
+                  clientModeMap[site.domain_name] ??
+                  (site.status_client ? "online" : "offline");
+                return (
+                  <tr key={`${site.program_name}-${index}`} className="hover:bg-gray-50">
+                    <td className="border px-4 py-2">{site.server_location}</td>
+                    <td className="border px-4 py-2">{site.program_name}</td>
+                    <td className="border px-4 py-2">{site.domain_name}</td>
+                    <td className="border px-4 py-2">
+                      <ClientBadge mode={mode} />
+                    </td>
+                    <td className="border px-4 py-2">
+                      {site.backend_url?.split("/api")[0] || "-"}
+                    </td>
+                    <td className="border px-4 py-2">
+                      <ServerBadge status={site.status_server} />
+                    </td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
 
