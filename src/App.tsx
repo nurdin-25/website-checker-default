@@ -7,7 +7,7 @@ import {
 import { classifyClient, isServerOnlineFromAxiosResponse } from "./helper";
 import ClientBadge from "./component/ClientBadge";
 import ServerBadge from "./component/ServerBadge";
-import { BeatLoader } from "react-spinners";
+import { BarLoader, BeatLoader } from "react-spinners";
 
 const backend = import.meta.env.VITE_BACKEND_URL;
 
@@ -46,13 +46,10 @@ function App() {
       setData([]);
       setTotalItem(0);
       setTotalPage(0);
-    } finally {
-      setLoading(false);
     }
   }, [page, limit, selectedServer]);
 
   const getStatus = useCallback(async () => {
-    setLoading(true);
     const rows: WebsiteListWithStatusInterface[] = [];
 
     for (const website of data) {
@@ -150,13 +147,16 @@ function App() {
             >
               {loading ? "Checking..." : "Cari"}
             </button>
-            <button className="m-0 p-3 bg-white rounded border text-red-600">
-              Stop
-            </button>
           </div>
         </div>
       </div>
-        <div className="mb-2 ml-5 font-bold">Total Toko: {totalItem}</div>
+        {
+          loading
+            ? <BarLoader className="ml-5" />
+            : <>
+              <div className="mb-2 ml-5 font-bold">Total Toko: {totalItem}</div>
+            </>
+        }
         <div
           ref={tableRef}
           className="overflow-x-auto m-5"
@@ -210,8 +210,12 @@ function App() {
             >
               Prev
             </button>
-            <span>Page {page}</span>
-            <span>/ {totalPage}</span>
+            {
+              loading ?? (<>
+                <span>Page {page}</span>
+                <span>/ {totalPage}</span>
+              </>)
+            }
             <button
               onClick={() => handlePageChange(page + 1)}
               className="px-3 py-1 bg-gray-200 rounded"
