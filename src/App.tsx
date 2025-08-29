@@ -66,7 +66,7 @@ function App() {
       let serverOnline = false;
       if (website.backend_url) {
         try {
-          const head = await axios.get(website.backend_url, {
+          const head = await axios.get(`${website.backend_url}:${website.port}/api/v1/system/get`, {
             timeout: 8000,
             validateStatus: () => true,
           });
@@ -84,6 +84,7 @@ function App() {
         status_client: client,
         backend_url: website.backend_url,
         status_server: serverOnline,
+        port: website.port
       });
     }
 
