@@ -9,23 +9,18 @@ import {
 
 const backend = import.meta.env.VITE_BACKEND_URL;
 
-// === Badge 3 warna (mode dari map terpisah) ===
-const ClientBadge: React.FC<{ mode: "online" | "protected" | "offline" }> = ({
-  mode,
-}) => {
+// === Badge 3 warna (client) ===
+const ClientBadge: React.FC<{ mode: "online" | "protected" | "offline" }> = ({ mode }) => {
   const m =
     mode === "online"
       ? { cls: "bg-green-100 text-green-700", label: "Online" }
       : mode === "protected"
       ? { cls: "bg-amber-100 text-amber-700", label: "Online – Protected" }
       : { cls: "bg-red-100 text-red-700", label: "Offline" };
-  return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium ${m.cls}`}>
-      {m.label}
-    </span>
-  );
+  return <span className={`px-2 py-1 rounded-full text-xs font-medium ${m.cls}`}>{m.label}</span>;
 };
 
+// === Badge 2 warna (server/origin) ===
 const ServerBadge: React.FC<{ status: boolean }> = ({ status }) => (
   <span
     className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -36,45 +31,64 @@ const ServerBadge: React.FC<{ status: boolean }> = ({ status }) => (
   </span>
 );
 
-// helper: klasifikasikan status dari response/error backend /check
-function classifyClientStatus(
-  res?: { status: number; data?: any },
-  err?: any
-): { bool: boolean; mode: "online" | "protected" | "offline" } {
-  const fromVal = (v: any) => {
-    if (typeof v === "boolean") {
-      return v ? { bool: true, mode: "online" as const } : { bool: false, mode: "offline" as const };
+// ---- Helpers ----
+
+// Pool sederhana agar tidak menembak ratusan request sekaligus
+async function mapPool<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length) as any;
+  let i = 0;
+  const run = async () => {
+    while (true) {
+      const idx = i++;
+      if (idx >= items.length) return;
+      results[idx] = await worker(items[idx]);
     }
-    if (typeof v === "string") {
-      const s = v.toUpperCase();
-      if (s === "ONLINE") return { bool: true, mode: "online" as const };
-      if (s === "ONLINE_PROTECTED") return { bool: true, mode: "protected" as const };
-      if (s === "OFFLINE") return { bool: false, mode: "offline" as const };
+  };
+  const runners = Array.from({ length: Math.min(limit, items.length) }, run);
+  await Promise.all(runners);
+  return results;
+}
+
+// Klasifikasi status client dari response /check
+function classifyClient(res?: { status: number; data?: any }, err?: any):
+  { bool: boolean; mode: "online" | "protected" | "offline" } {
+
+  // Cek response/data lebih detail
+  const extract = (x: any) => {
+    if (!x) return undefined;
+    if (typeof x === "object" && x.status) {
+      if (typeof x.status === "boolean") return x.status ? "ONLINE" : "OFFLINE";
+      if (typeof x.status === "string") return x.status.toUpperCase();
     }
-    return null;
+    if (typeof x === "string") return x.toUpperCase();
+    return undefined;
   };
 
-  // jika ada body status yang eksplisit
-  const v1 =
-    res?.data?.status ??
-    (typeof res?.data === "string" ? res?.data : undefined) ??
-    err?.response?.data?.status ??
-    (typeof err?.response?.data === "string" ? err?.response?.data : undefined);
-  const parsed = fromVal(v1);
-  if (parsed) return parsed;
+  const val =
+    extract(res?.data) ??
+    extract(res) ??
+    extract(err?.response?.data) ??
+    extract(err?.response);
 
-  // fallback pakai HTTP status dari /check
+  if (val === "ONLINE") return { bool: true, mode: "online" };
+  if (val === "ONLINE_PROTECTED" || val === "PROTECTED") return { bool: true, mode: "protected" };
+  if (val === "OFFLINE") return { bool: false, mode: "offline" };
+
+  // fallback berdasarkan HTTP code dari /check
   const code = res?.status ?? err?.response?.status ?? 0;
-  if (code >= 200 && code < 400) return { bool: true, mode: "online" };
   if (code === 403 || code === 503) return { bool: true, mode: "protected" };
+  if (code >= 100 && code <= 599) return { bool: true, mode: "online" };
   return { bool: false, mode: "offline" };
+}
+
+// Klasifikasi server/origin (anggap online jika ada respon HTTP apapun)
+function isServerOnlineFromAxiosResponse(r?: { status?: number }) {
+  return typeof r?.status === "number" && r.status >= 200 && r.status < 500;
 }
 
 function App() {
   const [table, setTable] = useState<Array<WebsiteListWithStatusInterface>>([]);
-  const [clientModeMap, setClientModeMap] = useState<
-    Record<string, "online" | "protected" | "offline">
-  >({});
+  const [clientModeMap, setClientModeMap] = useState<Record<string, "online" | "protected" | "offline">>({});
   const [serverName, setServerName] = useState<string>("ALL");
   const [search, setSearch] = useState<string>("");
   const [data, setData] = useState<Array<WebsiteListInterface>>([]);
@@ -82,22 +96,16 @@ function App() {
 
   const fetchData = async () => {
     try {
-      const response = await axios.get(`${backend}/get-data-client`);
-      setData(response.data.data);
-    } catch (error) {
-      console.error("Error fetching data:", error);
+      const response = await axios.get(`${backend}/get-data-client`, { validateStatus: () => true });
+      setData(response.data.data || []);
+    } catch {
       setData([]);
     }
   };
 
   const filteredList = useMemo(() => {
-    const byServer =
-      serverName === "ALL"
-        ? data
-        : data.filter((w) => w.server_location === serverName);
-
+    const byServer = serverName === "ALL" ? data : data.filter((w) => w.server_location === serverName);
     if (!search.trim()) return byServer;
-
     const q = search.toLowerCase();
     return byServer.filter(
       (site) =>
@@ -112,91 +120,74 @@ function App() {
     setTable([]);
     setClientModeMap({});
 
-    const results = await Promise.allSettled(
-      filteredList.map(async (website) => {
-        // --- Client Status via backend /check ---
-        let clientResult: { bool: boolean; mode: "online" | "protected" | "offline" } = {
-          bool: false,
-          mode: "offline",
-        };
-
-        if (website.domain_name?.length) {
-          try {
-            const res = await axios.get(`${backend}/check`, {
-              params: { url: website.domain_name },
-              timeout: 9000,
-              validateStatus: () => true, // jangan throw utk 403/503
-            });
-            clientResult = classifyClientStatus({ status: res.status, data: res.data });
-          } catch (err: any) {
-            clientResult = classifyClientStatus(undefined, err);
-          }
+    const results = await mapPool(filteredList, 10, async (website) => {
+      // --- Client status via /check ---
+      let client: { bool: boolean; mode: "online" | "protected" | "offline" } = { bool: false, mode: "offline" };
+      if (website.domain_name?.length) {
+        try {
+          const res = await axios.get(`${backend}/check`, {
+            params: { url: website.domain_name },
+            timeout: 12000,
+            validateStatus: () => true, // jangan throw utk 4xx/5xx
+          });
+          client = classifyClient({ status: res.status, data: res.data });
+        } catch (err: any) {
+          client = classifyClient(undefined, err);
         }
+      }
 
-        // --- Server Status (origin/backend) ---
-        let status_server_bool = false;
-        if (website.backend_url?.length) {
-          try {
-            const head = await axios.head(website.backend_url, {
-              timeout: 6000,
+      // --- Server/origin status ---
+      let serverOnline = false;
+      if (website.backend_url?.length) {
+        try {
+          const head = await axios.head(website.backend_url, {
+            timeout: 8000,
+            validateStatus: () => true,
+          });
+          serverOnline = isServerOnlineFromAxiosResponse(head);
+
+          if (!serverOnline) {
+            const get = await axios.get(website.backend_url, {
+              timeout: 10000,
               validateStatus: () => true,
             });
-            status_server_bool = head.status >= 200 && head.status < 400;
-
-            if (!status_server_bool) {
-              const get = await axios.get(website.backend_url, {
-                timeout: 9000,
-                validateStatus: () => true,
-              });
-              status_server_bool = get.status >= 200 && get.status < 400;
-            }
-          } catch {
-            status_server_bool = false;
+            serverOnline = isServerOnlineFromAxiosResponse(get);
           }
+        } catch {
+          serverOnline = false; // benar2 tidak bisa dihubungi
         }
+      }
 
-        // simpan mode untuk rendering badge kuning/merah/hijau (key pakai domain_name unik)
-        // tidak mengubah interface
-        return {
-          row: {
-            server_location: website.server_location,
-            domain_name: website.domain_name,
-            program_name: website.program_name,
-            status_client: clientResult.bool, // boolean utk kompatibilitas
-            backend_url: website.backend_url,
-            status_server: status_server_bool,
-          } as WebsiteListWithStatusInterface,
-          mode: clientResult.mode,
-        };
-      })
-    );
+      return {
+        row: {
+          server_location: website.server_location,
+          domain_name: website.domain_name,
+          program_name: website.program_name,
+          status_client: client.bool, // boolean (kompatibel interface lama)
+          backend_url: website.backend_url,
+          status_server: serverOnline,
+        } as WebsiteListWithStatusInterface,
+        mode: client.mode,
+      };
+    });
 
-    const tableData: Array<WebsiteListWithStatusInterface> = [];
-    const modeMap: Record<string, "online" | "protected" | "offline"> = {};
-
+    const nextTable: Array<WebsiteListWithStatusInterface> = [];
+    const nextMode: Record<string, "online" | "protected" | "offline"> = {};
     results.forEach((r) => {
-      if (r.status === "fulfilled" && r.value) {
-        tableData.push(r.value.row);
-        modeMap[r.value.row.domain_name] = r.value.mode;
+      if (r) {
+        nextTable.push(r.row);
+        nextMode[r.row.domain_name] = r.mode;
       }
     });
 
-    setTable(tableData);
-    setClientModeMap(modeMap);
+    setTable(nextTable);
+    setClientModeMap(nextMode);
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    if (data.length > 0) getStatus();
-  }, [data]);
-
-  useEffect(() => {
-    if (data.length > 0) getStatus();
-  }, [serverName]);
+  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { if (data.length > 0) getStatus(); }, [data]);
+  useEffect(() => { if (data.length > 0) getStatus(); }, [serverName]);
 
   return (
     <>
@@ -263,23 +254,15 @@ function App() {
                 );
               })
               .map((site, index) => {
-                const mode =
-                  clientModeMap[site.domain_name] ??
-                  (site.status_client ? "online" : "offline");
+                const mode = clientModeMap[site.domain_name] ?? (site.status_client ? "online" : "offline");
                 return (
                   <tr key={`${site.program_name}-${index}`} className="hover:bg-gray-50">
                     <td className="border px-4 py-2">{site.server_location}</td>
                     <td className="border px-4 py-2">{site.program_name}</td>
                     <td className="border px-4 py-2">{site.domain_name}</td>
-                    <td className="border px-4 py-2">
-                      <ClientBadge mode={mode} />
-                    </td>
-                    <td className="border px-4 py-2">
-                      {site.backend_url?.split("/api")[0] || "-"}
-                    </td>
-                    <td className="border px-4 py-2">
-                      <ServerBadge status={site.status_server} />
-                    </td>
+                    <td className="border px-4 py-2"><ClientBadge mode={mode} /></td>
+                    <td className="border px-4 py-2">{site.backend_url?.split("/api")[0] || "-"}</td>
+                    <td className="border px-4 py-2"><ServerBadge status={site.status_server} /></td>
                   </tr>
                 );
               })}
