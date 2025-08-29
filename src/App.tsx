@@ -120,7 +120,7 @@ function App() {
     setTable([]);
     setClientModeMap({});
 
-    const results = await mapPool(filteredList, 10, async (website) => {
+    for (const website of filteredList) {
       // --- Client status via /check ---
       let client: { bool: boolean; mode: "online" | "protected" | "offline" } = { bool: false, mode: "offline" };
       if (website.domain_name?.length) {
@@ -128,7 +128,7 @@ function App() {
           const res = await axios.get(`${backend}/check`, {
             params: { url: website.domain_name },
             timeout: 12000,
-            validateStatus: () => true, // jangan throw utk 4xx/5xx
+            validateStatus: () => true,
           });
           client = classifyClient({ status: res.status, data: res.data });
         } catch (err: any) {
@@ -154,52 +154,39 @@ function App() {
             serverOnline = isServerOnlineFromAxiosResponse(get);
           }
         } catch {
-          serverOnline = false; // benar2 tidak bisa dihubungi (misal Apache mati)
+          serverOnline = false;
         }
       }
-
-      // Jika backend_url kosong, status server offline
       if (!website.backend_url) serverOnline = false;
 
-      return {
-        row: {
-          server_location: website.server_location,
-          domain_name: website.domain_name,
-          program_name: website.program_name,
-          status_client: client.bool, // boolean (kompatibel interface lama)
-          backend_url: website.backend_url,
-          status_server: serverOnline,
-        } as WebsiteListWithStatusInterface,
-        mode: client.mode,
+      const row: WebsiteListWithStatusInterface = {
+        server_location: website.server_location,
+        domain_name: website.domain_name,
+        program_name: website.program_name,
+        status_client: client.bool,
+        backend_url: website.backend_url,
+        status_server: serverOnline,
       };
-    });
 
-    const nextTable: Array<WebsiteListWithStatusInterface> = [];
-    const nextMode: Record<string, "online" | "protected" | "offline"> = {};
-    results.forEach((r) => {
-      if (r) {
-        nextTable.push(r.row);
-        nextMode[r.row.domain_name] = r.mode;
-      }
-    });
+      setTable((prev) => [...prev, row]);
+      setClientModeMap((prev) => ({ ...prev, [website.domain_name]: client.mode }));
+    }
 
     // Tambahkan data yang tidak lolos filter sebagai offline
     data.forEach((site) => {
       if (!filteredList.find((f) => f.domain_name === site.domain_name)) {
-        nextTable.push({
+        setTable((prev) => [...prev, {
           server_location: site.server_location,
           domain_name: site.domain_name,
           program_name: site.program_name,
           status_client: false,
           backend_url: site.backend_url,
           status_server: false,
-        });
-        nextMode[site.domain_name] = "offline";
+        }]);
+        setClientModeMap((prev) => ({ ...prev, [site.domain_name]: "offline" }));
       }
     });
 
-    setTable(nextTable);
-    setClientModeMap(nextMode);
     setLoading(false);
   };
 
