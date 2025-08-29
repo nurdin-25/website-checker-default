@@ -7,6 +7,7 @@ import {
 import { classifyClient, isServerOnlineFromAxiosResponse } from "./helper";
 import ClientBadge from "./component/ClientBadge";
 import ServerBadge from "./component/ServerBadge";
+import { BeatLoader } from "react-spinners";
 
 const backend = import.meta.env.VITE_BACKEND_URL;
 
@@ -29,12 +30,13 @@ function App() {
   const [limit] = useState(10);
   const [totalItem, setTotalItem] = useState(0);
   const tableRef = useRef<HTMLDivElement>(null);
+  const [selectedServer, setSelectedServer] = useState<string>("ALL");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const { data: response } = await axios.get<ResponseFetch>(
-        `${backend}/get-data-client?page=${page}&limit=${limit}`,
+        `${backend}/get-data-client?page=${page}&limit=${limit}&selectedServer=${selectedServer}`,
         { validateStatus: () => true }
       );
       setData(response.data.items || []);
@@ -47,7 +49,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [page, limit]);
+  }, [page, limit, selectedServer]);
 
   const getStatus = useCallback(async () => {
     setLoading(true);
@@ -117,6 +119,11 @@ function App() {
     setPage(newPage);
   };
 
+  const handleSelection = (server: string) => {
+    setSelectedServer(server);
+    setPage(1);
+  };
+
   return (
     <>
       <h1 className="text-center m-3 text-5xl font-bold">Domain Checker</h1>
@@ -125,14 +132,10 @@ function App() {
         <div className="w-auto flex flex-wrap gap-4">
           <div className="w-auto flex flex-col">
             <label className="mb-1 font-bold">Select Server</label>
-            <select className="bg-white rounded p-3 w-56">
+            <select value={selectedServer} disabled={loading} onChange={(e) => handleSelection(e.target.value)} className="bg-white rounded p-3 w-56">
               <option value="ALL">All</option>
               <option value="biznet-1">Biznet 1</option>
               <option value="biznet-2">Biznet 2</option>
-              <option value="backup-server">Backup Server</option>
-              <option value="nevacloud-dev">Nevacloud Dev</option>
-              <option value="nevacloud-2">Nevacloud 2</option>
-              <option value="nevacloud-3">Nevacloud 3</option>
             </select>
           </div>
           <div className="w-auto flex flex-col">
@@ -173,9 +176,11 @@ function App() {
             <tbody>
               {loading ? (
                 <tr>
-                <td colSpan={6} className="text-center py-6">
-                  Loading...
-                </td>
+                  <td colSpan={6} className="text-center py-6">
+                    <div className="p-5">
+                      <BeatLoader />
+                    </div>
+                  </td>
                 </tr>
               ) : (
                 table.map((site, index) => (
@@ -197,7 +202,7 @@ function App() {
               )}
             </tbody>
           </table>
-          <div className="flex justify-center items-center gap-2 my-2">
+          <div className="flex justify-center items-center gap-2 mt-5">
             <button
               onClick={() => handlePageChange(page - 1)}
               className="px-3 py-1 bg-gray-200 rounded"
