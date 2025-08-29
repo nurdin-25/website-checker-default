@@ -197,15 +197,24 @@ function App() {
   useEffect(() => {
     const ref = tableRef.current;
     if (!ref) return;
+    let userScrolling = false;
+    let lastScrollTop = 0;
     const handleScroll = () => {
+      // Deteksi apakah user sedang scroll manual
       const isBottom = ref.scrollHeight - ref.scrollTop - ref.clientHeight < 10;
       setAutoScroll(isBottom);
+      // Jika scrollTop berubah signifikan, anggap user scroll manual
+      if (Math.abs(ref.scrollTop - lastScrollTop) > 5) {
+        userScrolling = true;
+      }
+      lastScrollTop = ref.scrollTop;
     };
     ref.addEventListener("scroll", handleScroll);
     return () => ref.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
+    // Scroll otomatis hanya jika posisi di bawah
     if (autoScroll && tableRef.current) {
       tableRef.current.scrollTop = tableRef.current.scrollHeight;
     }
